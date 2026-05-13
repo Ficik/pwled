@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -133,33 +132,33 @@ func (c *Client) watchConfig() {
 func (c *Client) publishDiscovery() {
 	cfg := c.cfg.Load()
 
-	host, _ := os.Hostname()
 	device := map[string]any{
 		"identifiers":  []string{"pwled-" + c.opts.NodeID},
 		"name":         "pwled " + c.opts.NodeID,
 		"model":        "pwled",
 		"manufacturer": "pwled",
-		"sw_version":   "",
-	}
-	if host != "" {
-		device["configuration_url"] = "" // optional; populate if/when HTTP UI is reachable from HA
 	}
 	availability := []map[string]string{
 		{"topic": c.availTopic(), "payload_available": "online", "payload_not_available": "offline"},
 	}
 
-	presetCfg := map[string]any{
-		"name":          "Preset",
-		"unique_id":     c.opts.NodeID + "_preset",
-		"object_id":     c.opts.NodeID + "_preset",
-		"state_topic":   c.presetState(),
-		"command_topic": c.presetSet(),
-		"options":       presetNames(cfg),
-		"availability":  availability,
-		"device":        device,
-		"icon":          "mdi:tune-vertical",
+	// HA's select schema requires a non-empty `options` array. Skip the
+	// preset entity entirely until at least one preset exists; watchConfig
+	// republishes when presets are added.
+	if names := presetNames(cfg); len(names) > 0 {
+		presetCfg := map[string]any{
+			"name":          "Preset",
+			"unique_id":     c.opts.NodeID + "_preset",
+			"object_id":     c.opts.NodeID + "_preset",
+			"state_topic":   c.presetState(),
+			"command_topic": c.presetSet(),
+			"options":       names,
+			"availability":  availability,
+			"device":        device,
+			"icon":          "mdi:tune-vertical",
+		}
+		c.publishJSON(c.discoveryTopic("select", "preset"), presetCfg, true)
 	}
-	c.publishJSON(c.discoveryTopic("select", "preset"), presetCfg, true)
 
 	activityCfg := map[string]any{
 		"name":         "Activity",

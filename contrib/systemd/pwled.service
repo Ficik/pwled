@@ -1,0 +1,17 @@
+[Unit]
+Description=pwled — PipeWire → WLED Audio Sync sender
+Documentation=https://github.com/wled/WLED https://github.com/MoonModules/SR-WLED-audio-server-win
+# pwled spawns pw-cat, which needs an active PipeWire session.
+After=pipewire.service pipewire-pulse.service
+Wants=pipewire.service
+
+[Service]
+Type=simple
+# Edit the args (target node, destination, MQTT broker, ...) as you need.
+# Run `pwled --list` once to discover PipeWire node names.
+ExecStart=%h/.local/bin/pwled
+Restart=on-failure
+RestartSec=3s
+
+[Install]
+WantedBy=default.target

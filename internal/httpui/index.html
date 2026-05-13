@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>pwled monitor</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#0d0d0d;color:#ccc;font-family:'Courier New',monospace}
+body{display:flex;flex-direction:column;padding:16px;gap:12px;transition:background .08s ease}
+body.beat{background:#1c0800}
+#header{display:flex;justify-content:space-between;align-items:center}
+#header h1{font-size:12px;letter-spacing:3px;color:#444;text-transform:uppercase}
+#status{font-size:11px;padding:3px 8px;border-radius:3px;background:#1a1a1a;color:#555}
+#status.ok{color:#3a3}
+#activity{font-size:11px;padding:3px 8px;border-radius:3px;background:#1a1a1a;color:#555;margin-left:6px;letter-spacing:1px;text-transform:uppercase}
+#activity.on{color:#3a3}
+#activity.off{color:#a44}
+#eq{width:100%;flex:1;min-height:0;display:block}
+#vol-wrap{height:10px;background:#1a1a1a;border-radius:2px;overflow:hidden;position:relative}
+#vol-raw{position:absolute;inset:0;background:#1e4d7a;transform-origin:left;transform:scaleX(0);transition:transform .05s}
+#vol-smooth{position:absolute;inset:0;background:#2a7abf;opacity:.6;transform-origin:left;transform:scaleX(0);transition:transform .1s}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.stat{background:#141414;border:1px solid #1e1e1e;border-radius:4px;padding:12px 14px}
+.stat-label{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#444;margin-bottom:6px}
+.stat-value{font-size:26px;color:#ddd;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#s-beat{color:#222;transition:color .05s,text-shadow .05s}
+#s-beat.active{color:#ff6600;text-shadow:0 0 16px #ff4400}
+#cfg{background:#141414;border:1px solid #1e1e1e;border-radius:4px;padding:0;font-size:11px}
+#cfg-toggle{width:100%;padding:10px 14px;background:none;border:none;color:#888;text-align:left;cursor:pointer;font:inherit;letter-spacing:2px;text-transform:uppercase}
+#cfg-toggle:hover{color:#ccc}
+#cfg-body{padding:0 14px 14px;display:none}
+#cfg.open #cfg-body{display:block}
+#cfg.open #cfg-toggle{color:#ccc;border-bottom:1px solid #1e1e1e}
+.cfg-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:6px 24px;margin-top:8px}
+.cfg-section{margin-top:14px}
+.cfg-section h2{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#888;margin-bottom:2px;border-bottom:1px solid #1e1e1e;padding-bottom:4px;display:flex;align-items:center}
+.cfg-row{display:flex;align-items:center;gap:10px;padding:5px 0;flex-wrap:wrap}
+.cfg-row label{flex:1;color:#aaa;font-size:10px;letter-spacing:1px;text-transform:uppercase;display:flex;align-items:center;min-width:0}
+.cfg-row input[type=number],.cfg-row select{background:#0d0d0d;border:1px solid #2a2a2a;color:#ccc;padding:3px 6px;border-radius:2px;font:inherit;width:88px;text-align:right;flex-shrink:0}
+.cfg-row input[type=checkbox]{accent-color:#2a7abf;width:14px;height:14px;flex-shrink:0}
+.tip{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:50%;background:#222;color:#888;font-size:9px;font-weight:700;font-family:sans-serif;font-style:normal;text-transform:none;letter-spacing:0;cursor:help;margin-left:6px;position:relative;flex-shrink:0;border:none;padding:0;line-height:1}
+.tip:hover,.tip:focus{background:#2a7abf;color:#fff;outline:none}
+.tip[data-tip]:hover::after,.tip[data-tip]:focus::after{content:attr(data-tip);position:absolute;top:calc(100% + 8px);left:0;background:#1a1a1a;color:#ddd;border:1px solid #3a3a3a;padding:6px 10px;border-radius:3px;font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;line-height:1.4;width:240px;white-space:normal;text-align:left;z-index:100;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,.6)}
+.tip[data-tip]:hover::before,.tip[data-tip]:focus::before{content:'';position:absolute;top:calc(100% + 3px);left:3px;border:5px solid transparent;border-bottom-color:#3a3a3a;z-index:101;pointer-events:none}
+@media (max-width:600px){.tip[data-tip]:hover::after,.tip[data-tip]:focus::after{left:auto;right:0}.tip[data-tip]:hover::before,.tip[data-tip]:focus::before{left:auto;right:3px}}
+.cfg-presets{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:10px 0 4px;border-bottom:1px solid #1e1e1e;margin-bottom:6px}
+.cfg-presets-label{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#888;margin-right:4px}
+.preset-item{display:inline-flex;align-items:stretch;border:1px solid #2a2a2a;border-radius:2px;background:#1a1a1a;overflow:hidden}
+.preset-item button{background:transparent;border:none;color:#aaa;padding:5px 10px;font:inherit;cursor:pointer;letter-spacing:1px;text-transform:uppercase;font-size:10px}
+.preset-item .preset-apply:hover{background:#222;color:#ccc}
+.preset-item .preset-del{color:#666;border-left:1px solid #2a2a2a;padding:5px 7px;font-size:11px;line-height:1}
+.preset-item .preset-del:hover{background:#3a1a1a;color:#c66}
+.preset-add{background:transparent;border:1px dashed #2a2a2a;color:#666;padding:5px 12px;border-radius:2px;font:inherit;cursor:pointer;letter-spacing:1px;text-transform:uppercase;font-size:10px}
+.preset-add:hover{color:#aaa;border-color:#3a3a3a}
+.cfg-actions{margin-top:14px;display:flex;gap:8px;align-items:center}
+.cfg-actions button{background:#1a1a1a;border:1px solid #2a2a2a;color:#ccc;padding:6px 14px;border-radius:2px;font:inherit;cursor:pointer;letter-spacing:1px;text-transform:uppercase;font-size:10px}
+.cfg-actions button:hover{background:#222}
+.cfg-actions button.primary{background:#1e4d7a;border-color:#2a7abf;color:#fff}
+.cfg-actions button.primary:hover{background:#2a6fa8}
+#cfg-msg{flex:1;align-self:center;font-size:10px;color:#888}
+#cfg-msg.ok{color:#3a3}
+#cfg-msg.err{color:#a44}
+.cfg-err{color:#a44;font-size:10px;margin-top:2px;flex-basis:100%}
+</style>
+</head>
+<body>
+<div id="header">
+  <h1>pwled monitor</h1>
+  <div>
+    <span id="status">connecting…</span>
+    <span id="activity">idle</span>
+  </div>
+</div>
+<canvas id="eq"></canvas>
+<div id="vol-wrap"><div id="vol-raw"></div><div id="vol-smooth"></div></div>
+<div class="stats">
+  <div class="stat"><div class="stat-label">Peak Frequency</div><div class="stat-value" id="s-freq">— Hz</div></div>
+  <div class="stat"><div class="stat-label">Magnitude</div><div class="stat-value" id="s-mag">—</div></div>
+  <div class="stat"><div class="stat-label">Volume raw / smooth</div><div class="stat-value" id="s-vol">— / —</div></div>
+  <div class="stat"><div class="stat-label">Beat</div><div class="stat-value" id="s-beat">●</div></div>
+</div>
+<div id="cfg">
+  <button id="cfg-toggle" type="button">▸ Settings</button>
+  <div id="cfg-body"></div>
+</div>
+<script>
+const canvas = document.getElementById('eq');
+const ctx    = canvas.getContext('2d');
+
+// smoothed band values (interpolated each frame for fluid animation)
+const smooth = new Float32Array(16);
+// peak-hold: value and hold-frame countdown
+const peakVal   = new Float32Array(16);
+const peakHold  = new Int32Array(16);
+const HOLD_FRAMES = 50;
+const PEAK_FALL   = 0.008;
+const SMOOTH_K    = 0.35; // how fast bars track incoming values
+
+// freq labels for each band (low edge, from protocol doc)
+const BAND_LABELS = ['86','129','216','301','430','560','818','1.1k','1.4k','1.9k','2.4k','3k','3.7k','4.5k','7.2k','10k'];
+
+let dpr = 1;
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  const r = canvas.getBoundingClientRect();
+  canvas.width  = r.width  * dpr;
+  canvas.height = r.height * dpr;
+}
+new ResizeObserver(resize).observe(canvas);
+resize();
+
+function barColor(v) {
+  // v in [0,1]: blue → cyan → green → yellow → red
+  const h = (1 - v) * 220; // 220 = blue, 0 = red/orange
+  const l = 40 + v * 20;
+  return `hsl(${h},100%,${l}%)`;
+}
+
+function draw() {
+  const W = canvas.width  / dpr;
+  const H = canvas.height / dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+
+  const N    = 16;
+  const PAD  = 3;
+  const LBLH = 14;
+  const barH = H - LBLH;
+  const barW = (W - PAD * (N + 1)) / N;
+
+  for (let i = 0; i < N; i++) {
+    const x   = PAD + i * (barW + PAD);
+    const v   = smooth[i];
+    const h   = v * barH;
+    const top = barH - h;
+
+    // bar fill with vertical gradient
+    if (h > 0) {
+      const g = ctx.createLinearGradient(0, top, 0, barH);
+      const c = barColor(v);
+      g.addColorStop(0, c);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(x, top, barW, h);
+    }
+
+    // peak-hold line
+    if (peakVal[i] > 0.01) {
+      const py = barH - peakVal[i] * barH;
+      ctx.fillStyle = barColor(peakVal[i]);
+      ctx.globalAlpha = 0.9;
+      ctx.fillRect(x, py, barW, 2);
+      ctx.globalAlpha = 1;
+    }
+
+    // freq label
+    ctx.fillStyle = '#333';
+    ctx.font = `${Math.max(8, Math.min(10, barW - 2))}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText(BAND_LABELS[i], x + barW / 2, H - 2);
+  }
+}
+
+function animate() {
+  for (let i = 0; i < 16; i++) {
+    if (peakHold[i] > 0) {
+      peakHold[i]--;
+    } else {
+      peakVal[i] = Math.max(0, peakVal[i] - PEAK_FALL);
+    }
+  }
+  draw();
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+
+// ── stats ────────────────────────────────────────────────────────────────────
+const elStatus   = document.getElementById('status');
+const elActivity = document.getElementById('activity');
+const elFreq   = document.getElementById('s-freq');
+const elMag    = document.getElementById('s-mag');
+const elVol    = document.getElementById('s-vol');
+const elBeat   = document.getElementById('s-beat');
+const elVR     = document.getElementById('vol-raw');
+const elVS     = document.getElementById('vol-smooth');
+
+let beatTimer;
+function triggerBeat() {
+  document.body.classList.add('beat');
+  elBeat.classList.add('active');
+  clearTimeout(beatTimer);
+  beatTimer = setTimeout(() => {
+    document.body.classList.remove('beat');
+    elBeat.classList.remove('active');
+  }, 180);
+}
+
+function onFrame(d) {
+  // update smoothed bars
+  for (let i = 0; i < 16; i++) {
+    const target = d.bands[i] / 255;
+    smooth[i] = smooth[i] * (1 - SMOOTH_K) + target * SMOOTH_K;
+    if (smooth[i] > peakVal[i]) {
+      peakVal[i]  = smooth[i];
+      peakHold[i] = HOLD_FRAMES;
+    }
+  }
+
+  // volume bars
+  elVR.style.transform = `scaleX(${d.raw    / 255})`;
+  elVS.style.transform = `scaleX(${d.smooth / 255})`;
+
+  // stats text
+  elFreq.textContent = d.majorPeak.toFixed(1) + ' Hz';
+  elMag.textContent  = d.magnitude.toFixed(0);
+  elVol.textContent  = d.raw.toFixed(0) + ' / ' + d.smooth.toFixed(0);
+
+  if (d.peak) triggerBeat();
+
+  // activity gate state (sender pauses while inactive)
+  elActivity.textContent = d.active ? 'active' : 'idle';
+  elActivity.className   = d.active ? 'on'     : 'off';
+}
+
+// ── WebSocket with auto-reconnect ─────────────────────────────────────────────
+function connect() {
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+
+  ws.onopen = () => {
+    elStatus.textContent = 'connected';
+    elStatus.className   = 'ok';
+  };
+  ws.onclose = () => {
+    elStatus.textContent = 'reconnecting…';
+    elStatus.className   = '';
+    setTimeout(connect, 2000);
+  };
+  ws.onerror = () => ws.close();
+  ws.onmessage = e => onFrame(JSON.parse(e.data));
+}
+connect();
+
+// ── settings panel ───────────────────────────────────────────────────────────
+const CFG_SCHEMA = [
+  { key: 'squelch', label: 'Squelch', desc: 'Treat near-silent frames as zero — skips room noise and hum.', fields: [
+    { k: 'enabled',   t: 'bool', label: 'Enabled', desc: 'Drop frames where every sample is below threshold.' },
+    { k: 'threshold', t: 'num',  label: 'Threshold', min: 0, max: 0.5, step: 0.001,
+      desc: 'Full-scale level below which the frame counts as silence (0.005 ≈ −46 dBFS).' },
+  ]},
+  { key: 'gain', label: 'Gain', desc: 'Pre-AGC linear amplification — bake your "mic level" here.', fields: [
+    { k: 'linear', t: 'num', label: 'Linear', min: 0, max: 100, step: 0.1,
+      desc: 'Multiplier on the input. AGC tracks more slowly than this, so gain helps reach useful levels fast.' },
+  ]},
+  { key: 'agc', label: 'AGC', desc: 'Auto-scale bands toward Target peak using a tracked global maximum.', fields: [
+    { k: 'enabled',         t: 'bool', label: 'Enabled', desc: 'Turn AGC off to send raw band magnitudes (clamped at target).' },
+    { k: 'mode',            t: 'enum', label: 'Mode', options: ['off','normal','vivid','lazy'],
+      desc: 'Picks the default release time — vivid ≈ 4 s, normal ≈ 8 s, lazy ≈ 16 s.' },
+    { k: 'target_peak',     t: 'num',  label: 'Target peak', min: 32, max: 255, step: 1,
+      desc: 'Where the loudest band lands (0..255). Higher = brighter peaks, less headroom.' },
+    { k: 'release_seconds', t: 'num',  label: 'Release sec', min: 0, max: 60, step: 0.1,
+      desc: 'How fast the tracked peak decays toward zero. 0 = use the mode default.' },
+  ]},
+  { key: 'bands', label: 'Bands', desc: 'How FFT bins map to the 16 bars sent on the wire.', fields: [
+    { k: 'scale',  t: 'enum', label: 'Scale', options: ['log','sqrt','linear'],
+      desc: 'log = WLED-MM default (table in protocol doc). sqrt/linear redistribute toward higher freqs.' },
+    { k: 'low_hz', t: 'num',  label: 'Low Hz', min: 20, max: 500, step: 1,
+      desc: 'Bottom of band 0 for sqrt/linear scales. Ignored for "log".' },
+  ]},
+  { key: 'limiter', label: 'Dynamics limiter', desc: 'Per-band rolling-max — keeps quiet bands visible when one band dominates.', fields: [
+    { k: 'enabled',        t: 'bool', label: 'Enabled', desc: 'When off, only the global AGC drives band scaling.' },
+    { k: 'window_seconds', t: 'num',  label: 'Window seconds', min: 0.1, max: 60, step: 0.1,
+      desc: 'How long the per-band max is remembered. Shorter = more reactive, longer = more stable.' },
+  ]},
+  { key: 'smoothing', label: 'Smoothing (rise/fall)', desc: 'Asymmetric one-pole filters: attack is the rise time, release is the fall time.', fields: [
+    { k: 'sample_attack_ms',  t: 'num', label: 'Sample attack ms',  min: 1, max: 5000,  step: 1,
+      desc: 'How fast the volume bar rises on a louder signal.' },
+    { k: 'sample_release_ms', t: 'num', label: 'Sample release ms', min: 1, max: 10000, step: 1,
+      desc: 'How slowly the volume bar falls when the signal quietens.' },
+    { k: 'band_attack_ms',    t: 'num', label: 'Band attack ms',    min: 1, max: 5000,  step: 1,
+      desc: 'Per-band rise time. Keep short (≤ 100 ms) for snappy GEQ; raise for ambient.' },
+    { k: 'band_release_ms',   t: 'num', label: 'Band release ms',   min: 1, max: 10000, step: 1,
+      desc: "Per-band fall time. The single biggest knob for smoothing — WLED's 'Decay Time'." },
+  ]},
+  { key: 'beat', label: 'Beat detection', desc: 'Onset detector that sets the per-frame samplePeak flag.', fields: [
+    { k: 'threshold_mult',  t: 'num',  label: 'Threshold × mean', min: 1.0, max: 10, step: 0.05,
+      desc: 'Energy must exceed this × recent average to register a beat.' },
+    { k: 'min_interval_ms', t: 'num',  label: 'Min interval ms', min: 50, max: 5000, step: 10,
+      desc: 'Refractory period after a beat. Larger = fewer triggers, more deliberate.' },
+    { k: 'median_gate',     t: 'bool', label: 'Median gate',
+      desc: 'Also require energy > 1.4 × median(history). Kills hi-hat over-trigger.' },
+  ]},
+  { key: 'watchdog', label: 'Silence watchdog', desc: 'Sent every 450 ms when audio stalls so WLED effects fade cleanly.', fields: [
+    { k: 'decay_per_frame', t: 'num', label: 'Decay per frame', min: 0.5, max: 1.0, step: 0.01,
+      desc: 'Multiplier applied to the last packet on each watchdog tick. Lower = harder cut.' },
+  ]},
+  { key: 'activity', label: 'Activity gate', desc: 'Pauses the UDP sender (frames + watchdog) when audio is quiet for too long, letting other senders take over.', fields: [
+    { k: 'enabled',         t: 'bool', label: 'Enabled',
+      desc: 'When off, the sender always transmits regardless of input level.' },
+    { k: 'threshold',       t: 'num',  label: 'Threshold', min: 0, max: 255, step: 0.5,
+      desc: 'Pre-AGC raw envelope (0..255) that counts as "loud enough". Stable against AGC pumping up the noise floor.' },
+    { k: 'timeout_seconds', t: 'num',  label: 'Timeout seconds', min: 0.1, max: 600, step: 0.5,
+      desc: 'How long the input must stay below threshold before the sender goes idle.' },
+  ]},
+];
+
+// DSP_SECTIONS is the list of top-level keys the DSP processor reads.
+// Used when applying or saving presets so we touch only DSP fields and leave
+// the `presets` array (and any future top-level keys) alone.
+const DSP_SECTIONS = CFG_SCHEMA.map(s => s.key);
+
+const cfgEl     = document.getElementById('cfg');
+const cfgToggle = document.getElementById('cfg-toggle');
+const cfgBody   = document.getElementById('cfg-body');
+let currentCfg  = null;
+
+cfgToggle.onclick = () => {
+  const open = cfgEl.classList.toggle('open');
+  cfgToggle.textContent = (open ? '▾' : '▸') + ' Settings';
+  if (open && !currentCfg) loadConfig();
+};
+
+function attrEscape(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function tipHTML(desc) {
+  if (!desc) return '';
+  return `<button type="button" class="tip" data-tip="${attrEscape(desc)}" tabindex="0" aria-label="info">?</button>`;
+}
+
+function renderConfig(cfg) {
+  currentCfg = cfg;
+  cfgBody.innerHTML = '';
+
+  // Presets bar — built from cfg.presets. Clicking the name applies +
+  // persists immediately; the × deletes the preset. "Save as…" snapshots the
+  // current form values into a new preset.
+  const pres = document.createElement('div');
+  pres.className = 'cfg-presets';
+  pres.innerHTML = `<span class="cfg-presets-label">Presets</span>`;
+  for (const p of (cfg.presets || [])) {
+    const item = document.createElement('span');
+    item.className = 'preset-item';
+    const apply = document.createElement('button');
+    apply.type = 'button';
+    apply.className = 'preset-apply';
+    apply.textContent = p.name;
+    if (p.description) apply.title = p.description;
+    apply.onclick = () => applyPreset(p);
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'preset-del';
+    del.textContent = '×';
+    del.title = 'Delete preset';
+    del.onclick = () => deletePreset(p.name);
+    item.appendChild(apply);
+    item.appendChild(del);
+    pres.appendChild(item);
+  }
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'preset-add';
+  add.textContent = '+ Save as…';
+  add.title = 'Save current form values as a new preset';
+  add.onclick = saveAsPreset;
+  pres.appendChild(add);
+  cfgBody.appendChild(pres);
+
+  for (const sec of CFG_SCHEMA) {
+    const div = document.createElement('div');
+    div.className = 'cfg-section';
+    div.innerHTML = `<h2>${sec.label}${tipHTML(sec.desc)}</h2>`;
+    const grid = document.createElement('div');
+    grid.className = 'cfg-grid';
+    for (const f of sec.fields) {
+      const row = document.createElement('div');
+      row.className = 'cfg-row';
+      row.dataset.path = `${sec.key}.${f.k}`;
+      const v = cfg[sec.key]?.[f.k];
+      let input;
+      if (f.t === 'bool') {
+        input = `<input type="checkbox" ${v ? 'checked' : ''}>`;
+      } else if (f.t === 'enum') {
+        input = `<select>${f.options.map(o => `<option${o===v?' selected':''}>${o}</option>`).join('')}</select>`;
+      } else {
+        input = `<input type="number" min="${f.min}" max="${f.max}" step="${f.step}" value="${v}">`;
+      }
+      row.innerHTML = `<label>${f.label}${tipHTML(f.desc)}</label>${input}<div class="cfg-err"></div>`;
+      grid.appendChild(row);
+    }
+    div.appendChild(grid);
+    cfgBody.appendChild(div);
+  }
+  const actions = document.createElement('div');
+  actions.className = 'cfg-actions';
+  actions.innerHTML = `
+    <button id="cfg-save" class="primary" type="button">Save</button>
+    <button id="cfg-reload" type="button">Reload</button>
+    <button id="cfg-reset" type="button">Reset defaults</button>
+    <span id="cfg-msg"></span>`;
+  cfgBody.appendChild(actions);
+  document.getElementById('cfg-save').onclick   = saveConfig;
+  document.getElementById('cfg-reload').onclick = loadConfig;
+  document.getElementById('cfg-reset').onclick  = resetConfig;
+}
+
+// applyPreset replaces the live DSP sections with the preset's snapshot,
+// keeping the presets array (and any non-DSP fields) intact.
+function applyPreset(p) {
+  const merged = JSON.parse(JSON.stringify(currentCfg));
+  for (const k of DSP_SECTIONS) {
+    if (p.settings && p.settings[k]) {
+      merged[k] = JSON.parse(JSON.stringify(p.settings[k]));
+    }
+  }
+  putConfig(merged, `preset “${p.name}” applied`);
+}
+
+// saveAsPreset snapshots current FORM values (so unsaved tweaks are captured)
+// into a new preset and persists. If a preset with the same name already
+// exists the user is asked whether to overwrite.
+function saveAsPreset() {
+  const name = (prompt('Preset name?') || '').trim();
+  if (!name) return;
+  const desc = (prompt('Short description (optional):', '') || '').trim();
+
+  const formCfg = gatherConfig();
+  const settings = {};
+  for (const k of DSP_SECTIONS) settings[k] = JSON.parse(JSON.stringify(formCfg[k]));
+  const item = { name, description: desc, settings };
+
+  const next = JSON.parse(JSON.stringify(formCfg));
+  next.presets = next.presets || [];
+  const i = next.presets.findIndex(p => p.name === name);
+  if (i >= 0) {
+    if (!confirm(`Preset "${name}" exists. Replace?`)) return;
+    next.presets[i] = item;
+  } else {
+    next.presets.push(item);
+  }
+  putConfig(next, `preset “${name}” saved`);
+}
+
+function deletePreset(name) {
+  if (!confirm(`Delete preset "${name}"?`)) return;
+  const next = JSON.parse(JSON.stringify(currentCfg));
+  next.presets = (next.presets || []).filter(p => p.name !== name);
+  putConfig(next, `preset “${name}” deleted`);
+}
+
+// putConfig is the shared write path for Save / preset apply / preset save /
+// preset delete. Validation errors render inline; successful writes refresh
+// the form from the server's echoed config.
+async function putConfig(payload, successMsg) {
+  clearErrors();
+  try {
+    const r = await fetch('/api/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const body = await r.json();
+    if (r.status === 422 && body.fields) {
+      showErrors(body.fields);
+      setMsg(body.error || 'validation failed', 'err');
+      return;
+    }
+    if (!r.ok) throw new Error(body.error || ('HTTP ' + r.status));
+    renderConfig(body);
+    setMsg(successMsg, 'ok');
+  } catch (e) {
+    setMsg('failed: ' + e.message, 'err');
+  }
+}
+
+function gatherConfig() {
+  const out = JSON.parse(JSON.stringify(currentCfg));
+  for (const sec of CFG_SCHEMA) {
+    for (const f of sec.fields) {
+      const row = cfgBody.querySelector(`[data-path="${sec.key}.${f.k}"]`);
+      const inp = row.querySelector('input,select');
+      if (f.t === 'bool')      out[sec.key][f.k] = inp.checked;
+      else if (f.t === 'enum') out[sec.key][f.k] = inp.value;
+      else                     out[sec.key][f.k] = parseFloat(inp.value);
+    }
+  }
+  return out;
+}
+
+function clearErrors() {
+  cfgBody.querySelectorAll('.cfg-err').forEach(e => e.textContent = '');
+}
+
+function showErrors(fields) {
+  for (const path in fields) {
+    const row = cfgBody.querySelector(`[data-path="${path}"]`);
+    if (row) row.querySelector('.cfg-err').textContent = fields[path];
+  }
+}
+
+function setMsg(text, cls) {
+  const m = document.getElementById('cfg-msg');
+  if (!m) return;
+  m.textContent = text;
+  m.className = cls || '';
+  if (text) setTimeout(() => { if (m.textContent === text) m.textContent = ''; }, 4000);
+}
+
+async function loadConfig() {
+  try {
+    const r = await fetch('/api/config');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    renderConfig(await r.json());
+    clearErrors();
+    setMsg('loaded', 'ok');
+  } catch (e) {
+    setMsg('load failed: ' + e.message, 'err');
+  }
+}
+
+function saveConfig() {
+  putConfig(gatherConfig(), 'saved');
+}
+
+async function resetConfig() {
+  if (!confirm('Reset all DSP settings to defaults?')) return;
+  try {
+    const r = await fetch('/api/config/reset', { method: 'POST' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    renderConfig(await r.json());
+    clearErrors();
+    setMsg('reset', 'ok');
+  } catch (e) {
+    setMsg('reset failed: ' + e.message, 'err');
+  }
+}
+</script>
+</body>
+</html>
